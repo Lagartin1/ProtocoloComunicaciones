@@ -1,0 +1,50 @@
+version: "3.9"
+
+networks:
+  labnet:           # red interna únicamente para el laboratorio
+    driver: bridge
+
+services:
+  emitter:
+    build: ./docker/emitter        # Dockerfile en ./docker/emitter
+    container_name: emitter
+    networks: [labnet]
+    cap_add: [NET_BIND_SERVICE]    # abrir puerto sin sudo
+    environment:
+      ROLE: "emitter"
+      TARGET_HOST: "receiver"
+      TARGET_PORT: "6000"
+    restart: unless-stopped
+
+  receiver:
+    build: ./docker/receiver       # Dockerfile en ./docker/receiver
+    container_name: receiver
+    networks: [labnet]
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      ROLE: "receiver"
+      LISTEN_PORT: "6000"
+    restart: unless-stopped
+  chaos:
+    image: gaiaadm/pumba:0.8.0
+    container_name: chaos
+    networks: [labnet]
+    cap_add:          # para poder ejecutar 'tc netem' dentro
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:       # arranca solo cuando emitter esté arriba
+      - emitter
+    # ---- Configura aquí tu “terremoto” de red ----
+    entrypoint:
+      - pumba
+      - netem
+      - --duration=30m         # aplica los fallos 30 minutos
+      - loss
+      - --percent=10           # 10 % de pérdida
+      - delay
+      - --time=120ms           # 120 ms de retardo (fijo)
+      - duplicate
+      - --percent=5            # 5 % de duplicados
+      - emitter                # contenedor objetivo
+    restart: on-failure
+
