@@ -1,50 +1,48 @@
 
-EXPERCTED_HEADER = b'\x01'
-
 HEADER = b'\x01'  # header byte
 FOOTER = b'\xAA'  # Footer byte 
 
-EMITER = b'\x01'  # Emisor byte
 
-EXPERCTED_RECEIVER = b'\x02'
+def parse_pkt(pkt, EXPERCTED_RECEIVER):
+    """
+    Parse a packet and return its components.
+    """
+    if len(pkt) < 7:
+        return None, "Packet too short"
+    
+    if pkt[0] != HEADER[0] or pkt[-1] != FOOTER[0]:
+        return None, "Invalid header or footer"
 
-def parse_pkt(pkt):
-    if len(pkt) < 3:
-        return None, "Packet too short" 
-
-    # Extract the first 4 bytes as an integer
-    try:
-        if EXPERCTED_HEADER != pkt[:1]:  # 
-            return None, "Invalid header"
-        value = int.from_bytes(pkt[2:3], byteorder='big')
-        if EXPERCTED_RECEIVER != pkt[3:4]:
-            return None, "Invalid receiver"
-        pkt_parsed = {}
-        pkt_tipo = pkt[4:5]
-        ### Solo RECEPTOR
-        if  pkt_tipo == 'pkt' :
-            pkt_parsed['tipo'] = pkt_tipo
-            pkt_parsed['sq'] = int.from_bytes(pkt[5:7], byteorder='big')
-            pkt_parsed['largo'] = int.from_bytes(pkt[7:9], byteorder='big')
-            pkt_parsed['data'] = pkt[9:9 + pkt_parsed['largo']]
-            pkt_parsed['crc'] = pkt[9 + pkt_parsed['largo']:11 + pkt_parsed['largo']]
-        #######
-        #### SOLO EMISOR
-        elif pkt_tipo == 'ack':
-            pkt_parsed['tipo'] = pkt_tipo
-            pkt_parsed['sq'] = int.from_bytes(pkt[5:7], byteorder='big')
-            pkt_parsed['crc'] = pkt[7:9]
-        elif pkt_tipo == 'nak':
-            pkt_parsed['tipo'] = pkt_tipo
-            pkt_parsed['sq'] = int.from_bytes(pkt[5:7], byteorder='big')
-            pkt_parsed['crc'] = pkt[7:9]
-        else:
-            return None, "Unknown packet type"
-        #######
-        return pkt_parsed, None
-         
-    except ValueError as e:
-        return None, f"Error parsing packet: {e}"
+    emisor = pkt[1]
+    receptor = pkt[2]
+    tipo = chr(pkt[3])
+    sq = int.from_bytes(pkt[4:6], byteorder='big')
+    largo = int.from_bytes(pkt[6:8], byteorder='big')
+    
+    if len(pkt) < 8 + largo + 2:
+        return None, "Packet length mismatch"
+    
+    data = pkt[8:8 + largo]
+    crc_received = int.from_bytes(pkt[-3:-1], byteorder='big')
+    
+    # Calculate CRC
+    crc_calculated = crc16_ibm(pkt[1:-2])
+    
+    if crc_received != crc_calculated:
+        return None, "CRC mismatch"
+    
+    if receptor != EXPERCTED_RECEIVER:
+        return None, "Unexpected receiver"
+    
+    return {
+        'emisor': emisor,
+        'receptor': receptor,
+        'tipo': tipo,
+        'sq': sq,
+        'largo': largo,
+        'data': data
+    }, None
+    
 
 # CRC-16 CCITT (XModem)
 POLY = 0xA001  # CRC-16 IBM (reflejado)
@@ -60,17 +58,30 @@ def crc16_ibm(data: bytes) -> int:
     return crc & 0xFFFF
 
 
+def cifrador(data, key: int = 0x5A):
+    ## Cifra un dato con XOR
+   
+    data_bytes = bytearray(data)
+    # Encrypt the data using XOR with the key
+    return xor_cipher(data_bytes, key)
+
+
+def descifrar(data, key: int = 0x5A):
+    ## Descifra un dato cifrado con XOR
+    data_bytes = bytearray(data)
+    return xor_cipher(data_bytes, key)
+    
+
 # This function takes a byte array and a key, and returns the XORed result.
 def xor_cipher(data: bytes, key: int = 0x5A) -> bytes:
     return bytes(b ^ key for b in data)
 
 
-
-
-def create_pkt(tipo, sq, data):
+def create_pkt(tipo, sq, data, HEADER=HEADER, FOOTER=FOOTER, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
     """
     Create a package with the data.
     """
+    
     if tipo == 'pkt':
         largo = len(data)
         pkt = bytearray()
@@ -98,3 +109,20 @@ def create_pkt(tipo, sq, data):
         raise ValueError("Unknown packet type")
         
     
+def create_ack(sq, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
+    """
+    Create an ACK packet.
+    """
+    return create_pkt('ack', sq, b'', EMITER, EXPERCTED_RECEIVER)
+
+def create_nak(sq, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
+    """
+    Create a NAK packet.
+    """
+    return create_pkt('nak', sq, b'', EMITER, EXPERCTED_RECEIVER)
+
+def create_data_pkt(sq, data, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
+    """
+    Create a data packet.
+    """
+    return create_pkt('pkt', sq, data, EMITER, EXPERCTED_RECEIVER)

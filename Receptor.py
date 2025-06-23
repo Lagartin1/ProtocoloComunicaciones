@@ -1,103 +1,108 @@
 # Receptor.py
+from Protocolos import *
+import socket
 
-DATA = set()
 
-POLY = 0xA001  # CRC-16 IBM (reflejado)
+HOST = '127.0.0.1'  # Localhost for testing
+PORT = 5000  # Arbitrary port for testing
 
-def crc16_ibm(data: bytes) -> int:
-  crc = 0xFFFF
-  for b in data:
-    crc ^= b
-    for _ in range(8):
-      if crc & 1:
-        crc = (crc >> 1) ^ POLY
-      else:
-        crc >>= 1
-  return crc & 0xFFFF
+data = set()
+length_data = 0
 
-def xor_cipher(data: bytes, key: int = 0x5A) -> bytes:
-  return bytes(b ^ key for b in data)
 
-def validate_checksum(pkg: dict) -> bool:
-  # Prepare data for checksum (excluding checksum and final fields)
-  fields = [pkg["cabecera"], pkg["Emisor"], pkg["receptor"], pkg.get("logitud", 0), pkg.get("sq", 0)]
-  if "data" in pkg:
-    fields.extend(pkg["data"])
-  data_bytes = bytes(fields)
-  return crc16_ibm(data_bytes) == pkg["checksum"]
 
-def process_package(pkg: dict) -> dict:
-  """
-  Process incoming package and return ACK or NACK.
-  """
-  if not validate_checksum(pkg):
-    nack = createNack()
-    nack["sq"] = pkg.get("sq", 0)
-    return nack
+class SocketServer:
+    def __init__(self, host=HOST, port=PORT):
+      self.host = host
+      self.port = port
+      self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      self.sock.bind((self.host, self.port))
+      self.sock.listen()
+      print(f"Servidor escuchando en {self.host}:{self.port}")
 
-  if pkg["type"] == "pkg":
-    # Store data if not already present
-    DATA.update(pkg["data"])
-    ack = createAck()
-    ack["sq"] = pkg.get("sq", 0)
-    return ack
+    def accept_connection(self):
+      conn, addr = self.sock.accept()
+      print(f"Conexión aceptada de {addr}")
+      return conn, addr
+
+    def close(self):
+      self.sock.close()
+
+    def init(self):
+      print("Inicializando el servidor...")
+      self.sock.listen()
+      try:
+        conn, addr = server.accept_connection()
+        with conn:
+          while True:
+            data = conn.recv(1024)
+            if not data:
+              continue
+            response_pkt, error = mainapp(data)
+            if response_pkt is not None:
+              if error:
+                print("Error al procesar el paquete, se envió NACK.")
+                conn.sendall(createNack(response_pkt['seq']).encode()) # type: ignore
+              else:
+                print("Paquete procesado correctamente, se envió ACK.")
+                conn.sendall(createAck(response_pkt['seq']).encode()) # type: ignore
+      except Exception as e:
+        print(f"Error en el servidor: {e}")
+        server.close()
+        
+def mainapp(data):
+  
+  
+  sq, error = process_data(data)
+  
+  if sq is None and not error:
+    # send ACK with no sequence number
+    return {
+      'type': 'ack',
+      'seq': -1
+    }, False
+  elif not error:
+    # send ACK
+    return {
+      'type': 'ack',
+      'seq': sq
+    }, False
+  elif sq is not None and error:
+    # send NACK
+    return {
+      'type': 'nack',
+      'seq': sq
+    }, True
   else:
-    # Ignore unknown types
-    nack = createNack()
-    nack["sq"] = pkg.get("sq", 0)
-    return nack
+    print("No se pudo procesar el paquete correctamente.")
+    return None, True
+  
+  
 
-def createAck():
-  pkg = {
-    "cabecera": 0xAA,
-    "type": "ack",
-    "Emisor": 2,
-    "receptor": 1,
-    "logitud": 2,
-    "sq": 0,
-    "checksum": 0,
-    "final": 0xAA,
-  }
-  # Calculate checksum
-  fields = [pkg["cabecera"], pkg["Emisor"], pkg["receptor"], pkg["logitud"], pkg["sq"]]
-  pkg["checksum"] = crc16_ibm(bytes(fields))
-  return pkg
+def process_data(data):
+  """
+  Process the received data.
+  """
+  parsed,error = parse_pkt(data, EXPERCTED_RECEIVER=2) 
+  if error:
+    print(f"Error al procesar el paquete: {error}")
+    return None, True
+  secuence = parsed['sq']
+  if secuence == -1:
+    length_data = len(parsed['data'])
+    return None, False
+  else:
+    for i in range(secuence,len(parsed['data'])+1):
+      if i >= length_data: 
+        break
+      data.add(parsed['data'][i])
+  return parsed['sq'], False
 
-def createNack():
-  pkg = {
-    "cabecera": 0xAA,
-    "type": "nack",
-    "Emisor": 2,
-    "receptor": 1,
-    "logitud": 2,
-    "sq": 0,
-    "checksum": 0,
-    "final": 0xAA,
-  }
-  # Calculate checksum
-  fields = [pkg["cabecera"], pkg["Emisor"], pkg["receptor"], pkg["logitud"], pkg["sq"]]
-  pkg["checksum"] = crc16_ibm(bytes(fields))
-  return pkg
 
-# Example usage:
+
+
 if __name__ == "__main__":
-  # Simulate receiving a package
-  incoming_pkg = {
-    "cabecera": 0xAA,
-    "type": "pkg",
-    "Emisor": 1,
-    "receptor": 2,
-    "logitud": 5,
-    "sq": 2,
-    "data": [12, 15, 53, 40, 200],
-    "checksum": 0,
-    "final": 0xAA,
-  }
-  # Calculate checksum for incoming package
-  fields = [incoming_pkg["cabecera"], incoming_pkg["Emisor"], incoming_pkg["receptor"], incoming_pkg["logitud"], incoming_pkg["sq"]]
-  fields.extend(incoming_pkg["data"])
-  incoming_pkg["checksum"] = crc16_ibm(bytes(fields))
-
-  response = process_package(incoming_pkg)
-  print("Response:", response)
-  print("DATA stored:", DATA)
+  ## incio del servidor
+  server = SocketServer()
+  server.init()
+  

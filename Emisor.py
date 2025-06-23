@@ -1,5 +1,5 @@
-
-
+from Protocolos import *
+import socket
 
 """ 
     opciones para canal:
@@ -8,90 +8,44 @@
     -pipeline
     -sockets con docker y pumba para jitter,perdida de paquetes y latencia
 """
+HOST = '127.0.0.1'  # IP local para pruebas
+PORT = 5000           # Puerto arbitrario
 
 
-# CRC-16 CCITT (XModem)
-POLY = 0xA001  # CRC-16 IBM (reflejado)
-def crc16_ibm(data: bytes) -> int:
-    crc = 0xFFFF
-    for b in data:
-        crc ^= b
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ POLY
-            else:
-                crc >>= 1
-    return crc & 0xFFFF
+class ClienteSocket:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    def conectar(self):
+        self.socket.connect((self.host, self.port))
 
-DATA = {12,15,53,40,200}
-#XOR Cipher for data encryption
-# This function takes a byte array and a key, and returns the XORed result.
-def xor_cipher(data: bytes, key: int = 0x5A) -> bytes:
-    return bytes(b ^ key for b in data)
+    def enviar(self, mensaje):
+        self.socket.sendall(mensaje.encode())
 
-## ejemplos
-def creaPkgt():
-    """
-    Create a package with the data.
-    """
-    pkg = {
-        "cabecera": 0xAA,
-        "type": "pkg",
-        "Emisor":01,
-        "receptor": 02,
-        "logitud" : 2,
-        "sq": 2,
-        "data": DATA,
-        "checksum": 0,
-        "final": 0xAA,
-    }
-    return pkg
+    def recibir(self):
+        data = self.socket.recv(1024)
+        
+        return data.decode() if data else None
 
-def createAck():
-    """
-    Create a package with the data.
-    """
-    pkg = {
-        "cabecera": 0xAA,
-        "type": "ack",
-        "Emisor":01,
-        "receptor": 02,
-        "logitud" : 2,
-        "sq": 2, # secuencuia de paquete acpetado
-        "checksum": 0,
-        "final": 0xAA,
-    }
-    return pkg
+    def cerrar(self):
+        self.socket.close()
 
-def createNack():
-    """
-    Create a package with the data.
-    """
-    pkg = {
-        "cabecera": 0xAA,
-        "type": "nack",
-        "Emisor":01,
-        "receptor": 02,
-        "logitud" : 2,
-        "sq": 2, # secuencia paquete no aceptado
-        "checksum": 0,
-        "final": 0xAA,
-    }
-    return pkg
+def main(socket_cliente):
+    while True:
+        try:
+            mensaje = input("Ingrese el mensaje a enviar (o 'exit' para salir): ")
+            if mensaje.lower() == 'exit':
+                break
+            socket_cliente.enviar(mensaje)
+            respuesta = socket_cliente.recibir()
+            # time out de respuesta no recibida, reintentar
+        except Exception as e:
+            print(f"Error: {e}")
 
-## enviar paquete
-
-
-
-
-## envio  de imagen , o un libro en txt
-
-
-def main():
-    data = {1,1,1,1,1,1,1,1,1,1,1} 
-       
-    
     
 if __name__ == "__main__":
-    main()
+    socket_cliente = ClienteSocket(HOST, PORT)
+    socket_cliente.conectar()
+    main(socket_cliente)
