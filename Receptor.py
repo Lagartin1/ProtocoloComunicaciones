@@ -36,7 +36,7 @@ class SocketServer:
       print("Inicializando el servidor...")
       self.sock.listen()
       try:
-        conn, addr = server.accept_connection()
+        conn, _ = server.accept_connection()
         with conn:
           while True:
             data = conn.recv(1024)
@@ -50,6 +50,8 @@ class SocketServer:
               else:
                 print("Paquete procesado correctamente, se envió ACK.")
                 conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
+                
+                
       except Exception as e:
         print(f"Error en el servidor: {e}")
         server.close()
@@ -59,20 +61,20 @@ def mainapp(data):
   sq, error = process_data(data)
   
   if sq is None and not error:
-    # send ACK with no sequence number
+  # send ACK with no sequence number
     print(f"Recibido,sq={sq}")
     return {
       'type': 'ack',
       'seq': 0
     }, False
   elif not error:
-    # send ACK
+  # send ACK
     return {
       'type': 'ack',
       'seq': sq
     }, False
   elif sq is not None and error:
-    # send NACK
+  # send NACK
     return {
       'type': 'nack',
       'seq': sq
@@ -80,7 +82,7 @@ def mainapp(data):
   else:
     print("No se pudo procesar el paquete correctamente.")
     return None, True
-  
+    
   
 
 def process_data(data):
@@ -92,20 +94,26 @@ def process_data(data):
     print(f"Error al procesar el paquete: {error}")
     return None, True
   
+  # Check if it's a handshake packet
+  if parsed.get('tipo') == 'h':
+    print("Handshake recibido")
+    global length_data
+    length_data = parsed.get('length', 0)
+    return None, False
+  
   sequence = parsed['sq']
   if sequence in index:
     print(f"Secuencia {parsed['sq']} ya procesada, enviando NACK.")
     return parsed['sq'], True
   index.append(sequence)
-  for i in range(sequence-1,len(parsed['data'])+1):
-    if i >= length_data: 
-      break
-    datos.append(parsed['data'][i])
-      
+  data_content = parsed.get('data', [])
+  if isinstance(data_content, (list, bytes, str)):
+    for i in range(len(data_content)):
+      if len(datos) >= length_data: 
+        break
+      datos.append(data_content[i])
+    
   return parsed['sq'], False
-
-
-
 
 if __name__ == "__main__":
   ## incio del servidor

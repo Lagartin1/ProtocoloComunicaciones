@@ -14,6 +14,8 @@ EMMITER = b'\x01'  # Emisor
 EXPERCTED_RECEIVER = b'\x02'  # Receptor esperado
 
 
+
+
 class ClienteSocket:
     def __init__(self, host, port):
         self.host = host
@@ -38,41 +40,65 @@ class ClienteSocket:
     def cerrar(self):
         self.socket.close()
 
-def main(socket_cliente):
-    frase = ["hola", "mundo", "este", "es", "un", "mensaje"]
+def main(socket_cliente,datos):
+    handshake = False
     while True:
-        i = 0
-        while i < len(frase):
+        i = 0    
+        while i < len(datos):
             try:
-                largo = 3
-                
-                if i + largo > len(frase):
-                    largo = len(frase) - i
-                mensaje = create_data_pkt(i,frase[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
-                socket_cliente.enviar(mensaje)
-                respuesta = socket_cliente.recibir()
-                if respuesta:
-                    rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
-                    print()
-                    if rsp is None:
-                        print("Paquete recibido no válido o error en el procesamiento.")
-                    elif rsp['tipo'] == 'a':
-                        print(f"ACK recibido para secuencia {rsp['sq']}.")
-                        i += largo
-                    elif rsp['tipo'] == 'n':
-                        print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
-                        continue
+                if handshake:
+                    largo = 20  # Tamaño del paquete de datos
                     
+                    if i + largo > len(datos):
+                        largo = len(datos) - i
+                    mensaje = create_data_pkt(i,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
+                    socket_cliente.enviar(mensaje)
+                    respuesta = socket_cliente.recibir()
+                    if respuesta:
+                        rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
+                        print()
+                        if rsp is None:
+                            print("Paquete recibido no válido o error en el procesamiento.")
+                        elif rsp['tipo'] == 'a':
+                            print(f"ACK recibido para secuencia {rsp['sq']}.")
+                            i += largo
+                        elif rsp['tipo'] == 'n':
+                            print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
+                            continue
+                        
+                    else:
+                        print("No se recibió respuesta del servidor.")
+                        # Intentar nuevamente o manejar el caso de no respuesta
                 else:
-                    print("No se recibió respuesta del servidor.")
-                    # Intentar nuevamente o manejar el caso de no respuesta
-                exit(0)
+                    ## enviar handshake
+                    mensaje = create_handshake_pkt(int(len(datos)), EMMITER, EXPERCTED_RECEIVER)
+                    socket_cliente.enviar(mensaje)
+                    respuesta = socket_cliente.recibir()
+                    if respuesta:
+                        rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
+                        print()
+                        if rsp is None:
+                            print("Paquete recibido no válido o error en el procesamiento.")
+                        elif rsp['tipo'] == 'a':
+                            print(f"ACK recibido para secuencia {rsp['sq']}.")
+                            handshake = True
+                        elif rsp['tipo'] == 'n':
+                            print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
+                            continue
             except Exception as e:
                 print(f"Error: {e}")
+        exit(0)
 
     
     
 if __name__ == "__main__":
+    datos = []
+
+    with open('data/C. S. Lewis - Las Crónicas de Narnia 1 - El León, la Bruja y el Ropero.txt', 'r',encoding='utf-8') as file:
+        for line in file:
+            datos.extend(line.strip().split())
+
+    print(f"Datos cargados: {len(datos)}.")
     socket_cliente = ClienteSocket(HOST, PORT)
     socket_cliente.conectar()
-    main(socket_cliente)
+    main(socket_cliente, datos)

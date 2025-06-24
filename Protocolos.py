@@ -1,56 +1,64 @@
 
 HEADER = b'\x01'  # header byte
+FOOTER = b'\x02'  # footer byte
 
 
 def parse_pkt(pkt, EXPERCTED_RECEIVER):
     """
     Parse a packet and return its components.
     """
-    if len(pkt) < 7:
+    if len(pkt) < 10:  # Minimum packet size
         return None, "Packet too short"
     
-    if pkt[0] != HEADER[0] :
+    if pkt[0] != HEADER[0] or pkt[-1] != FOOTER[0]:
         return None, "Invalid header or footer"
 
     emisor = pkt[1]
     receptor = pkt[2]
     tipo = chr(pkt[3])
     sq = int.from_bytes(pkt[4:6], byteorder='big')
-    # largo es un int de valor 3 o 1,
-    largo = int.from_bytes(pkt[6:10], byteorder='big')
-    ## verifcar tipo
+    
     if tipo == 'p':
-        data = pkt[10:10 + largo]
-        crc_received = int.from_bytes(pkt[10 + largo:10 + largo + 2], byteorder='big')
-        crc_calculated = crc16_ibm(pkt[1:10 + largo])  # Exclude header and footer for CRC calculation
+        # Data packet: header + emisor + receptor + tipo + secuencia(2) + largo(2) + data + crc(2) + footer
+        largo = int.from_bytes(pkt[6:8], byteorder='big')
+        data = pkt[8:8 + largo]
+        crc_received = int.from_bytes(pkt[8 + largo:8 + largo + 2], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:8 + largo])  # Exclude header and footer
+    elif tipo == 'h':
+        # Handshake packet: header + emisor + receptor + tipo + secuencia(2) + data(2) + largo(1) + crc(2) + footer
+        data_value = int.from_bytes(pkt[6:8], byteorder='big')
+        largo = int.from_bytes(pkt[8:9], byteorder='big')
+        crc_received = int.from_bytes(pkt[9:11], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:9])  # Exclude header and footer
+        data = data_value
     else:
-        # header + emisor + receptor + tipo + secuencia + largo+ crc, para paquetes tipo a y n
-        crc_received = int.from_bytes(pkt[8:10], byteorder='big')
-        crc_calculated = crc16_ibm(pkt[1:8])  # Exclude header and footer for CRC calculation
+        # ACK/NACK packet: header + emisor + receptor + tipo + secuencia(2) + largo(1) + crc(2) + footer
+        largo = int.from_bytes(pkt[6:7], byteorder='big')
+        crc_received = int.from_bytes(pkt[7:9], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:7])  # Exclude header and footer
+        data = None
 
     if crc_received != crc_calculated:
         return None, "CRC mismatch"
     
     if receptor != EXPERCTED_RECEIVER[0]:
-        print(f"Receptor esperado: {EXPERCTED_RECEIVER}, Receptor recibido: {receptor}")
+        print(f"Receptor esperado: {EXPERCTED_RECEIVER[0]}, Receptor recibido: {receptor}")
         return None, "Unexpected receiver"
     
-    if tipo == 'p':
-        return {
-            'emisor': emisor,
-            'receptor': receptor,
-            'tipo': tipo,
-            'sq': sq,
-            'largo': largo,
-            'data': data
-        }, None
-    return {
+    result = {
         'emisor': emisor,
         'receptor': receptor,
         'tipo': tipo,
         'sq': sq,
-    }, None
+    }
     
+    if tipo == 'p':
+        result['largo'] = largo
+        result['data'] = data
+    elif tipo == 'h':
+        result['data'] = data
+    
+    return result, None
 
 # CRC-16 CCITT (XModem)
 POLY = 0xA001  # CRC-16 IBM (reflejado)
@@ -101,13 +109,14 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(ord('p'))  # Tipo de paquete (using 'p' as representation for data packet)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
-    pkt.extend(largo.to_bytes(4, byteorder='big'))  # Largo de los datos
-    print(f"Emisor: {EMMITER[0]}, Receptor: {EXPERCTED_RECEIVER[0]}, Tipo: 'p', Secuencia: {sq}, Largo: {largo.to_bytes(4, byteorder='big')}")
+    pkt.extend(largo.to_bytes(2, byteorder='big'))  # Largo de los datos
+    #print(f"Emisor: {EMMITER[0]}, Receptor: {EXPERCTED_RECEIVER[0]}, Tipo: 'p', Secuencia: {sq}, Largo: {largo.to_bytes(2, byteorder='big')}")
     pkt.extend(data_bytes)  # Datos
     
     # Calculate CRC and append it to the packet
     crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
     pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    pkt.append(FOOTER[0])  # Footer
 
     
     return bytes(pkt)
@@ -125,12 +134,13 @@ def create_ack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     # tipo ack
     pkt.append(ord('a'))  # Tipo ACK (using 'a' as representation)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
-    pkt.extend((0).to_bytes(2, byteorder='big'))  # Largo de los datos (0 para ACK)
-    
+    pkt.extend((1).to_bytes(1, byteorder='big'))  # Largo de los datos (1 para ACK)
+
     # Calculate CRC and append it to the packet, paquete tiene  header, receptor, emisor, tipo, secuencia y largo
     ## entonces crc sobre todo el packete menos el header
     crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
     pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    pkt.append(FOOTER[0])  # Footer
     
     
     return bytes(pkt)
@@ -147,10 +157,33 @@ def create_nack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(ord('n'))  # Tipo NACK (using 'n' as representation)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
-    pkt.extend((0).to_bytes(2, byteorder='big'))  # Largo de los datos (0 para NACK)
-    
+    pkt.extend((1).to_bytes(1, byteorder='big'))  # Largo de los datos (1 para NACK)
+
     # Calculate CRC and append it to the packet
     crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
     pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    pkt.append(FOOTER[0])  # Footer
+    
+    return bytes(pkt)
+
+
+def create_handshake_pkt(data:int,EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
+    """
+    Create a handshake packet.
+    """
+    # Convert the data to bytes
+    pkt = bytearray()
+    pkt.append(HEADER[0])  # Header
+    pkt.append(EMMITER[0])  # Emisor
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
+    pkt.append(ord('h'))  # Tipo Handshake (using 'h' as representation)
+    pkt.extend((0).to_bytes(2, byteorder='big'))  # Secuencia (0 for handshake)
+    pkt.extend((data).to_bytes(2, byteorder='big'))  # Data (length of the data)
+    pkt.extend((1).to_bytes(1, byteorder='big'))  # Largo de los datos (1 for handshake)
+
+    # Calculate CRC and append it to the packet
+    crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
+    pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    pkt.append(FOOTER[0])  # Footer
     
     return bytes(pkt)
