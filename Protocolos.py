@@ -1,4 +1,3 @@
-
 HEADER = b'\x01'  # header byte
 FOOTER = b'\x02'  # footer byte
 
@@ -21,9 +20,17 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
     if tipo == 'p':
         # Data packet: header + emisor + receptor + tipo + secuencia(2) + largo(2) + data + crc(2) + footer
         largo = int.from_bytes(pkt[6:8], byteorder='big')
-        data = pkt[8:8 + largo]
+        data_encrypted = pkt[8:8 + largo]
         crc_received = int.from_bytes(pkt[8 + largo:8 + largo + 2], byteorder='big')
         crc_calculated = crc16_ibm(pkt[1:8 + largo])  # Exclude header and footer
+        
+        # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
+        print(f"Receptor: Datos cifrados recibidos (raw): {data_encrypted}")
+        # Descifrar los datos aquí
+        data = descifrar(data_encrypted) # Llamada a descifrar
+        print(f"Receptor: Datos descifrados (bytes): {data}")
+        # --- FIN VERIFICACIÓN ---
+
     elif tipo == 'h':
         # Handshake packet: header + emisor + receptor + tipo + secuencia(2) + data(2) + largo(1) + crc(2) + footer
         data_value = int.from_bytes(pkt[6:8], byteorder='big')
@@ -54,7 +61,8 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
     
     if tipo == 'p':
         result['largo'] = largo
-        result['data'] = data
+        result['data'] = data.decode('utf-8') # Decodificar los datos descifrados a string
+        print(f"Receptor: Datos descifrados y decodificados: {result['data']}") # Imprimir la versión final decodificada
     elif tipo == 'h':
         result['data'] = data
     
@@ -100,7 +108,15 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     """
     # Convert the data to bytes
     data_bytes = b''.join(item.encode('utf-8') for item in data)
-    largo = len(data_bytes)  # Length of the data
+    
+    # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
+    print(f"Emisor: Datos originales (bytes): {data_bytes}")
+    # Cifrar los datos aquí
+    data_encrypted = cifrador(data_bytes) # Llamada a cifrador
+    print(f"Emisor: Datos cifrados (bytes): {data_encrypted}")
+    # --- FIN VERIFICACIÓN ---
+
+    largo = len(data_encrypted)  # Length of the encrypted data
     
     # Create the packet structure
     pkt = bytearray()
@@ -109,11 +125,12 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(ord('p'))  # Tipo de paquete (using 'p' as representation for data packet)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
-    pkt.extend(largo.to_bytes(2, byteorder='big'))  # Largo de los datos
+    pkt.extend(largo.to_bytes(2, byteorder='big'))  # Largo de los datos (de los datos cifrados)
     #print(f"Emisor: {EMMITER[0]}, Receptor: {EXPERCTED_RECEIVER[0]}, Tipo: 'p', Secuencia: {sq}, Largo: {largo.to_bytes(2, byteorder='big')}")
-    pkt.extend(data_bytes)  # Datos
+    pkt.extend(data_encrypted)  # Datos CIFRADOS
     
     # Calculate CRC and append it to the packet
+    # El CRC se calcula sobre la parte de control y los datos CIFRADOS
     crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
     pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
     pkt.append(FOOTER[0])  # Footer

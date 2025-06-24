@@ -46,9 +46,11 @@ class SocketServer:
             if response_pkt is not None:
               if error:
                 print("Error al procesar el paquete, se envió NACK.")
+                # Asegurarse de enviar el NACK con el número de secuencia correcto.
                 conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
               else:
                 print("Paquete procesado correctamente, se envió ACK.")
+                # Asegurarse de enviar el ACK con el número de secuencia correcto.
                 conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
                 
                 
@@ -61,20 +63,22 @@ def mainapp(data):
   sq, error = process_data(data)
   
   if sq is None and not error:
-  # send ACK with no sequence number
-    print(f"Recibido,sq={sq}")
+  # send ACK with no sequence number (for handshake)
+    print(f"Recibido, sq={sq} (Handshake)")
     return {
       'type': 'ack',
       'seq': 0
     }, False
   elif not error:
   # send ACK
+    print(f"Recibido, sq={sq} (Datos)")
     return {
       'type': 'ack',
       'seq': sq
     }, False
   elif sq is not None and error:
   # send NACK
+    print(f"Error, sq={sq} (NACK)")
     return {
       'type': 'nack',
       'seq': sq
@@ -98,7 +102,7 @@ def process_data(data):
   if parsed.get('tipo') == 'h':
     print("Handshake recibido")
     global length_data
-    length_data = parsed.get('length', 0)
+    length_data = parsed.get('data', 0) # 'data' en handshake es la longitud total
     return None, False
   
   sequence = parsed['sq']
@@ -106,12 +110,32 @@ def process_data(data):
     print(f"Secuencia {parsed['sq']} ya procesada, enviando NACK.")
     return parsed['sq'], True
   index.append(sequence)
-  data_content = parsed.get('data', [])
-  if isinstance(data_content, (list, bytes, str)):
-    for i in range(len(data_content)):
-      if len(datos) >= length_data: 
-        break
-      datos.append(data_content[i])
+  
+  data_content_str = parsed.get('data', '') # Los datos ya vienen descifrados y decodificados como string
+  
+  # Dividir el string en palabras (si el emisor envía palabras individuales)
+  # Esto asume que el emisor unió las palabras con `b''.join(item.encode('utf-8') for item in data)`
+  # y que no hay espacios adicionales entre ellas.
+  # Si el contenido original era una lista de palabras, ahora es un string concatenado.
+  # La forma más segura de reconstruir sería enviar la longitud original de las palabras,
+  # o re-dividir el string recibido si se sabe el separador original (ej. ' ').
+  # Para este ejemplo, asumiremos que los datos se reciben como un solo string y se añaden directamente.
+  
+  if isinstance(data_content_str, str):
+    # Opcional: si sabes que los datos originales eran palabras separadas, puedes intentar dividirlos de nuevo.
+    # Por ejemplo, si siempre se usó un espacio como separador:
+    # palabras_recibidas = data_content_str.split(' ') 
+    
+    # Para este ejemplo, simplemente añadiremos el string completo a la lista de datos del receptor.
+    # Si la intención es reconstruir la lista de palabras original, esto sería más complejo.
+    # Por simplicidad y para demostrar el cifrado/descifrado, añadimos el string tal cual.
+    if len(datos) < length_data: # Asegurarse de no exceder la longitud total esperada
+        datos.append(data_content_str)
+        # Puedes añadir una lógica para manejar la reconstrucción de la lista original de palabras si es necesario.
+        # Por ejemplo, si cada 'data' de un paquete 'p' siempre es una única palabra:
+        # datos.append(data_content_str)
+        # Si 'data' es un conjunto de palabras concatenadas, necesitarías una forma de dividirlas
+        # o adaptar la lógica de Emisor para enviar palabras una por una o con un separador claro.
     
   return parsed['sq'], False
 
@@ -119,4 +143,3 @@ if __name__ == "__main__":
   ## incio del servidor
   server = SocketServer()
   server.init()
-  
