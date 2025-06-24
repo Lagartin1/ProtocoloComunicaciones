@@ -39,10 +39,10 @@ class ClienteSocket:
         self.socket.close()
 
 def main(socket_cliente):
-    frase = ["hola", "mundo", "este", "es", "un", "mensaje", "de", "prueba", "para", "enviar", "a", "traves", "del", "protocolo", "de", "comunicacion", "que", "hemos", "implementado."]
+    frase = ["hola", "mundo", "este", "es", "un", "mensaje"]
     while True:
         i = 0
-        while i <= len(frase):
+        while i < len(frase):
             try:
                 largo = 3
                 
@@ -52,7 +52,7 @@ def main(socket_cliente):
                 socket_cliente.enviar(mensaje)
                 respuesta = socket_cliente.recibir()
                 if respuesta:
-                    rsp = parse_pkt(respuesta, EMMITER)  # type: ignore
+                    rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
                     print()
                     if rsp is None:
                         print("Paquete recibido no válido o error en el procesamiento.")
@@ -66,6 +66,7 @@ def main(socket_cliente):
                 else:
                     print("No se recibió respuesta del servidor.")
                     # Intentar nuevamente o manejar el caso de no respuesta
+                exit(0)
             except Exception as e:
                 print(f"Error: {e}")
 

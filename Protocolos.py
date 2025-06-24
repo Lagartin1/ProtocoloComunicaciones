@@ -19,13 +19,14 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
     # largo es un int de valor 3 o 1,
     largo = int.from_bytes(pkt[6:10], byteorder='big')
     ## verifcar tipo
-
-    data = pkt[10:10 + largo]
-
-
-    crc_received = int.from_bytes(pkt[10 + largo:10 + largo + 2], byteorder='big')
-
-    crc_calculated = crc16_ibm(pkt[1:10 + largo])  # Exclude header and footer for CRC calculation
+    if tipo == 'p':
+        data = pkt[10:10 + largo]
+        crc_received = int.from_bytes(pkt[10 + largo:10 + largo + 2], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:10 + largo])  # Exclude header and footer for CRC calculation
+    else:
+        # header + emisor + receptor + tipo + secuencia + largo+ crc, para paquetes tipo a y n
+        crc_received = int.from_bytes(pkt[8:10], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:8])  # Exclude header and footer for CRC calculation
 
     if crc_received != crc_calculated:
         return None, "CRC mismatch"
@@ -48,7 +49,6 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
         'receptor': receptor,
         'tipo': tipo,
         'sq': sq,
-        'largo': largo
     }, None
     
 
@@ -120,8 +120,8 @@ def create_ack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
     pkt = bytearray()
     pkt.append(HEADER[0])  # Header
-    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(EMMITER[0])  # Emisor
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     # tipo ack
     pkt.append(ord('a'))  # Tipo ACK (using 'a' as representation)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
@@ -143,8 +143,8 @@ def create_nack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
     pkt = bytearray()
     pkt.append(HEADER[0])  # Header
-    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(EMMITER[0])  # Emisor
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
     pkt.append(ord('n'))  # Tipo NACK (using 'n' as representation)
     pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
     pkt.extend((0).to_bytes(2, byteorder='big'))  # Largo de los datos (0 para NACK)
