@@ -1,6 +1,5 @@
 
 HEADER = b'\x01'  # header byte
-FOOTER = b'\xAA'  # Footer byte 
 
 
 def parse_pkt(pkt, EXPERCTED_RECEIVER):
@@ -10,37 +9,46 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
     if len(pkt) < 7:
         return None, "Packet too short"
     
-    if pkt[0] != HEADER[0] or pkt[-1] != FOOTER[0]:
+    if pkt[0] != HEADER[0] :
         return None, "Invalid header or footer"
 
     emisor = pkt[1]
     receptor = pkt[2]
     tipo = chr(pkt[3])
     sq = int.from_bytes(pkt[4:6], byteorder='big')
-    largo = int.from_bytes(pkt[6:8], byteorder='big')
-    
-    if len(pkt) < 8 + largo + 2:
-        return None, "Packet length mismatch"
-    
-    data = pkt[8:8 + largo]
-    crc_received = int.from_bytes(pkt[-3:-1], byteorder='big')
-    
-    # Calculate CRC
-    crc_calculated = crc16_ibm(pkt[1:-2])
-    
+    # largo es un int de valor 3 o 1,
+    largo = int.from_bytes(pkt[6:10], byteorder='big')
+    ## verifcar tipo
+
+    data = pkt[10:10 + largo]
+
+
+    crc_received = int.from_bytes(pkt[10 + largo:10 + largo + 2], byteorder='big')
+
+    crc_calculated = crc16_ibm(pkt[1:10 + largo])  # Exclude header and footer for CRC calculation
+
     if crc_received != crc_calculated:
         return None, "CRC mismatch"
     
-    if receptor != EXPERCTED_RECEIVER:
+    if receptor != EXPERCTED_RECEIVER[0]:
+        print(f"Receptor esperado: {EXPERCTED_RECEIVER}, Receptor recibido: {receptor}")
         return None, "Unexpected receiver"
     
+    if tipo == 'p':
+        return {
+            'emisor': emisor,
+            'receptor': receptor,
+            'tipo': tipo,
+            'sq': sq,
+            'largo': largo,
+            'data': data
+        }, None
     return {
         'emisor': emisor,
         'receptor': receptor,
         'tipo': tipo,
         'sq': sq,
-        'largo': largo,
-        'data': data
+        'largo': largo
     }, None
     
 
@@ -77,52 +85,72 @@ def xor_cipher(data: bytes, key: int = 0x5A) -> bytes:
     return bytes(b ^ key for b in data)
 
 
-def create_pkt(tipo, sq, data, HEADER=HEADER, FOOTER=FOOTER, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
-    """
-    Create a package with the data.
-    """
-    
-    if tipo == 'pkt':
-        largo = len(data)
-        pkt = bytearray()
-        pkt.append(HEADER[0])
-        pkt.append(EMITER[0])
-        pkt.append(EXPERCTED_RECEIVER[0])
-        pkt.append(ord(tipo[0]))
-        pkt.extend(sq.to_bytes(2, byteorder='big'))
-        pkt.extend(largo.to_bytes(2, byteorder='big'))
-        pkt.extend(data) 
-        crc = crc16_ibm(pkt[1:])
-        pkt.extend(crc.to_bytes(2, byteorder='big'))
-        pkt.append(FOOTER[0])
-    elif tipo in ['ack', 'nak']:
-        pkt = bytearray()
-        pkt.append(HEADER[0])
-        pkt.append(EMITER[0])
-        pkt.append(EXPERCTED_RECEIVER[0])
-        pkt.append(ord(tipo[0]))
-        pkt.extend(sq.to_bytes(2, byteorder='big'))
-        crc = crc16_ibm(pkt[1:])
-        pkt.extend(crc.to_bytes(2, byteorder='big'))
-        pkt.append(FOOTER[0])
-    else:
-        raise ValueError("Unknown packet type")
-        
-    
-def create_ack(sq, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
-    """
-    Create an ACK packet.
-    """
-    return create_pkt('ack', sq, b'', EMITER, EXPERCTED_RECEIVER)
 
-def create_nak(sq, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
+def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
-    Create a NAK packet.
+    Create a data packet with the given sequence number and data.
     """
-    return create_pkt('nak', sq, b'', EMITER, EXPERCTED_RECEIVER)
+    # Convert the data to bytes
+    data_bytes = b''.join(item.encode('utf-8') for item in data)
+    largo = len(data_bytes)  # Length of the data
+    
+    # Create the packet structure
+    pkt = bytearray()
+    pkt.append(HEADER[0])  # Header
+    pkt.append(EMMITER[0])  # Emisor
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
+    pkt.append(ord('p'))  # Tipo de paquete (using 'p' as representation for data packet)
+    pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
+    pkt.extend(largo.to_bytes(4, byteorder='big'))  # Largo de los datos
+    print(f"Emisor: {EMMITER[0]}, Receptor: {EXPERCTED_RECEIVER[0]}, Tipo: 'p', Secuencia: {sq}, Largo: {largo.to_bytes(4, byteorder='big')}")
+    pkt.extend(data_bytes)  # Datos
+    
+    # Calculate CRC and append it to the packet
+    crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
+    pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
 
-def create_data_pkt(sq, data, EMITER=b'\x01', EXPERCTED_RECEIVER=b'\x02'):
+    
+    return bytes(pkt)
+
+
+
+def create_ack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
-    Create a data packet.
+    Create an ACK packet with the given sequence number.
     """
-    return create_pkt('pkt', sq, data, EMITER, EXPERCTED_RECEIVER)
+    pkt = bytearray()
+    pkt.append(HEADER[0])  # Header
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
+    pkt.append(EMMITER[0])  # Emisor
+    # tipo ack
+    pkt.append(ord('a'))  # Tipo ACK (using 'a' as representation)
+    pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
+    pkt.extend((0).to_bytes(2, byteorder='big'))  # Largo de los datos (0 para ACK)
+    
+    # Calculate CRC and append it to the packet, paquete tiene  header, receptor, emisor, tipo, secuencia y largo
+    ## entonces crc sobre todo el packete menos el header
+    crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
+    pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    
+    
+    return bytes(pkt)
+
+
+
+def create_nack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:   
+    """
+    Create a NACK packet with the given sequence number.
+    """
+    pkt = bytearray()
+    pkt.append(HEADER[0])  # Header
+    pkt.append(EXPERCTED_RECEIVER[0])  # Receptor esperado
+    pkt.append(EMMITER[0])  # Emisor
+    pkt.append(ord('n'))  # Tipo NACK (using 'n' as representation)
+    pkt.extend(sq.to_bytes(2, byteorder='big'))  # Secuencia
+    pkt.extend((0).to_bytes(2, byteorder='big'))  # Largo de los datos (0 para NACK)
+    
+    # Calculate CRC and append it to the packet
+    crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
+    pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
+    
+    return bytes(pkt)

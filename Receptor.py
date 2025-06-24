@@ -6,8 +6,12 @@ import socket
 HOST = '127.0.0.1'  # Localhost for testing
 PORT = 5000  # Arbitrary port for testing
 
-data = set()
+EMMITER = b'\x01'  # Emiter
+EXPERCTED_RECEIVER = b'\x02'  # Expected receiver
+
+datos = []
 length_data = 0
+index = []
 
 
 
@@ -42,24 +46,24 @@ class SocketServer:
             if response_pkt is not None:
               if error:
                 print("Error al procesar el paquete, se envió NACK.")
-                conn.sendall(createNack(response_pkt['seq']).encode()) # type: ignore
+                conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
               else:
                 print("Paquete procesado correctamente, se envió ACK.")
-                conn.sendall(createAck(response_pkt['seq']).encode()) # type: ignore
+                conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
       except Exception as e:
         print(f"Error en el servidor: {e}")
         server.close()
         
 def mainapp(data):
   
-  
   sq, error = process_data(data)
   
   if sq is None and not error:
     # send ACK with no sequence number
+    print(f"Recibido,sq={sq}")
     return {
       'type': 'ack',
-      'seq': -1
+      'seq': 0
     }, False
   elif not error:
     # send ACK
@@ -83,19 +87,21 @@ def process_data(data):
   """
   Process the received data.
   """
-  parsed,error = parse_pkt(data, EXPERCTED_RECEIVER=2) 
+  parsed,error = parse_pkt(data, EXPERCTED_RECEIVER) 
   if error:
     print(f"Error al procesar el paquete: {error}")
     return None, True
-  secuence = parsed['sq']
-  if secuence == -1:
-    length_data = len(parsed['data'])
-    return None, False
-  else:
-    for i in range(secuence,len(parsed['data'])+1):
-      if i >= length_data: 
-        break
-      data.add(parsed['data'][i])
+  
+  sequence = parsed['sq']
+  if sequence in index:
+    print(f"Secuencia {parsed['sq']} ya procesada, enviando NACK.")
+    return parsed['sq'], True
+  index.append(sequence)
+  for i in range(sequence-1,len(parsed['data'])+1):
+    if i >= length_data: 
+      break
+    datos.append(parsed['data'][i])
+      
   return parsed['sq'], False
 
 
