@@ -3,7 +3,9 @@ from Protocolos import *
 import socket
 
 
-HOST = '127.0.0.1'  # Localhost for testing
+import os
+HOST = os.environ.get("HOST", "0.0.0.0")  # Ahora escucha en todas las interfaces
+
 PORT = 5000  # Arbitrary port for testing
 
 EMMITER = b'\x01'  # Emiter

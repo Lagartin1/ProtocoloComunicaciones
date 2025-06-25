@@ -8,7 +8,9 @@ import socket
     -pipeline
     -sockets con docker y pumba para jitter,perdida de paquetes y latencia
 """
-HOST = '127.0.0.1'  # IP local para pruebas
+import os
+import time
+HOST = os.environ.get("RECEIVER_HOST", "127.0.0.1")  # Ahora usa variable de entorno
 PORT = 5000           # Puerto arbitrario
 EMMITER = b'\x01'  # Emisor
 EXPERCTED_RECEIVER = b'\x02'  # Receptor esperado
@@ -80,10 +82,10 @@ def main(socket_cliente,datos):
                         if rsp is None:
                             print("Paquete recibido no válido o error en el procesamiento.")
                         elif rsp['tipo'] == 'a':
-                            print(f"ACK recibido para secuencia {rsp['sq']}.")
+                            print(f"ACK recibido para Handshake.")
                             handshake = True
                         elif rsp['tipo'] == 'n':
-                            print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
+                            print(f"NACK recibido para Handshake. Reintentando...")
                             continue
             except Exception as e:
                 print(f"Error: {e}")
@@ -101,4 +103,8 @@ if __name__ == "__main__":
     print(f"Datos cargados: {len(datos)}.")
     socket_cliente = ClienteSocket(HOST, PORT)
     socket_cliente.conectar()
+    # sleep 1 minuto
+    print("Esperando 20 segundos antes de enviar los datos...")
+    time.sleep(20)  # Espera 1 minuto antes de enviar los datos
+    print("Iniciando envío de datos...")
     main(socket_cliente, datos)

@@ -25,10 +25,10 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
         crc_calculated = crc16_ibm(pkt[1:8 + largo])  # Exclude header and footer
         
         # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
-        print(f"Receptor: Datos cifrados recibidos (raw): {data_encrypted}")
+        #print(f"Receptor: Datos cifrados recibidos (raw): {data_encrypted}")
         # Descifrar los datos aquí
         data = descifrar(data_encrypted) # Llamada a descifrar
-        print(f"Receptor: Datos descifrados (bytes): {data}")
+        #print(f"Receptor: Datos descifrados (bytes): {data}")
         # --- FIN VERIFICACIÓN ---
 
     elif tipo == 'h':
@@ -62,7 +62,7 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
     if tipo == 'p':
         result['largo'] = largo
         result['data'] = data.decode('utf-8') # Decodificar los datos descifrados a string
-        print(f"Receptor: Datos descifrados y decodificados: {result['data']}") # Imprimir la versión final decodificada
+        #print(f"Receptor: Datos descifrados y decodificados: {result['data']}") # Imprimir la versión final decodificada
     elif tipo == 'h':
         result['data'] = data
     
@@ -110,11 +110,11 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     data_bytes = b''.join(item.encode('utf-8') for item in data)
     
     # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
-    print(f"Emisor: Datos originales (bytes): {data_bytes}")
+    #print(f"Emisor: Datos originales (bytes): {data_bytes}")
     # Cifrar los datos aquí
     data_encrypted = cifrador(data_bytes) # Llamada a cifrador
-    print(f"Emisor: Datos cifrados (bytes): {data_encrypted}")
-    # --- FIN VERIFICACIÓN ---
+    #print(f"Emisor: Datos cifrados (bytes): {data_encrypted}")
+    ## --- FIN VERIFICACIÓN ---
 
     largo = len(data_encrypted)  # Length of the encrypted data
     

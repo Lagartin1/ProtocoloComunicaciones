@@ -1,0 +1,58 @@
+services:
+  receptor:
+    build:
+      context: ..
+      dockerfile: Dockerfile.receptor
+    container_name: receptor
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    ports:
+      - "5000:5000"
+    networks:
+      - mi_red_interna
+
+
+  emisor:
+    build:
+      context: ..
+      dockerfile: Dockerfile.emisor
+    container_name: emisor
+    depends_on:
+      - receptor
+    command: ["sh", "-c", "sleep 5 && python Emisor.py"]
+    environment:
+      - RECEIVER_HOST=receptor
+      - RECEIVER_PORT=5000
+      - PYTHONUNBUFFERED=1
+    networks:
+      - mi_red_interna
+  chaos_delay:
+    image: gaiaadm/pumba:latest
+    container_name: chaos_delay
+    command: ["netem", "--duration", "5m", "delay", "--time", "5000", "--jitter", "1000", "--correlation", "20", "receptor"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - receptor
+    networks:
+      - mi_red_interna
+
+  chaos_loss:
+    image: gaiaadm/pumba:latest
+    container_name: chaos_loss
+    command: ["netem", "--duration", "5m", "loss", "70%", "receptor"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - receptor
+    networks:
+      - mi_red_interna
+
+networks:
+  mi_red_interna:
+    driver: bridge
