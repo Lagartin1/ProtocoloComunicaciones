@@ -63,6 +63,10 @@ def main(socket_cliente,datos):
                             print("Paquete recibido no válido o error en el procesamiento.")
                         elif rsp['tipo'] == 'a':
                             print(f"ACK recibido para secuencia {rsp['sq']}.")
+                            if rsp['sq'] != i:
+                                print(f"Secuencia esperada {i}, pero se recibió {rsp['sq']}. Reintentando...")
+                                continue
+                            #print(f"Datos enviados: {datos[i:i+largo]}")
                             i += largo
                         elif rsp['tipo'] == 'n':
                             print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")

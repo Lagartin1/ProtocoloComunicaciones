@@ -47,14 +47,15 @@ class SocketServer:
             response_pkt, error = mainapp(data)
             if response_pkt is not None:
               if error:
-                print("Error al procesar el paquete, se envió NACK.")
+                print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
+                print(f"Error: {error}")
                 # Asegurarse de enviar el NACK con el número de secuencia correcto.
                 conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
               else:
-                print("Paquete procesado correctamente, se envió ACK.")
+                print(f"Paquete procesado correctamente seq={response_pkt['seq']}, se envió ACK.")
                 # Asegurarse de enviar el ACK con el número de secuencia correcto.
                 conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
-                
+            
                 
       except Exception as e:
         print(f"Error en el servidor: {e}")
@@ -109,8 +110,8 @@ def process_data(data):
   
   sequence = parsed['sq']
   if sequence in index:
-    print(f"Secuencia {parsed['sq']} ya procesada, enviando NACK.")
-    return parsed['sq'], True
+    print(f"Secuencia {parsed['sq']} ya procesada, enviando Ack.")
+    return parsed['sq'], False
   index.append(sequence)
   
   data_content_str = parsed.get('data', '') # Los datos ya vienen descifrados y decodificados como string

@@ -1,3 +1,5 @@
+import random
+
 HEADER = b'\x01'  # header byte
 FOOTER = b'\x02'  # footer byte
 
@@ -134,8 +136,11 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     crc = crc16_ibm(pkt[1:])  # Exclude header and footer for CRC calculation
     pkt.extend(crc.to_bytes(2, byteorder='big'))  # CRC
     pkt.append(FOOTER[0])  # Footer
-
     
+    ## añadir un error en los datos para probar el CRC
+    # en base a una probabilidad, se añade un error en el byte 10
+    if random.random() < 0.2:  # 10% chance to introduce an error
+        pkt[10] = (pkt[10] + 1) % 256    
     return bytes(pkt)
 
 

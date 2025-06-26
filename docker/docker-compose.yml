@@ -30,7 +30,7 @@ services:
   chaos_delay:
     image: gaiaadm/pumba:latest
     container_name: chaos_delay
-    command: ["netem", "--duration", "5m", "delay", "--time", "5000", "--jitter", "1000", "--correlation", "20", "receptor"]
+    command: ["netem", "--duration", "10m", "delay", "--time", "5000", "--jitter", "2000", "--correlation", "20", "emisor"]
     cap_add:
       - NET_ADMIN
     volumes:
@@ -43,7 +43,20 @@ services:
   chaos_loss:
     image: gaiaadm/pumba:latest
     container_name: chaos_loss
-    command: ["netem", "--duration", "5m", "loss", "70%", "receptor"]
+    command: ["netem", "--duration", "10m", "loss","--percent" ,"50","--correlation","30", "emisor"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - receptor
+    networks:
+      - mi_red_interna
+
+  chaos_corruption:
+    image: gaiaadm/pumba:latest
+    container_name: chaos_corruption
+    command: ["netem", "--duration", "10m", "corrupt","--percent","80","--correlation","50", "emisor"]
     cap_add:
       - NET_ADMIN
     volumes:
