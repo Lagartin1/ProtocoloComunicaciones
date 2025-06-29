@@ -14,7 +14,7 @@ EXPERCTED_RECEIVER = b'\x02'  # Expected receiver
 datos = []
 length_data = 0
 index = []
-
+key = 0
 
 
 class SocketServer:
@@ -34,7 +34,7 @@ class SocketServer:
     def close(self):
       self.sock.close()
 
-    def init(self):
+    def init(self,metrics):
       print("Inicializando el servidor...")
       self.sock.listen()
       try:
@@ -43,27 +43,42 @@ class SocketServer:
           while True:
             data = conn.recv(1024)
             if not data:
+              metrics.incrementar("losses")
               continue
-            response_pkt, error = mainapp(data)
+            response_pkt, error = mainapp(data,metrics)
             if response_pkt is not None:
               if error:
                 print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
                 print(f"Error: {error}")
                 # Asegurarse de enviar el NACK con el número de secuencia correcto.
+                metrics.incrementar("incorrect")
+                metrics.incrementar("sent")
                 conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
               else:
                 print(f"Paquete procesado correctamente seq={response_pkt['seq']}, se envió ACK.")
                 # Asegurarse de enviar el ACK con el número de secuencia correcto.
+                if error is not None:
+                  metrics.incrementar("duplicates")
+                metrics.incrementar("sent")
+                metrics.incrementar("correct")
                 conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
+            elif error:
+              print(f"Error {error} en paquete recibido")
+              if isinstance(error, str) and error == "CRC mismatch":
+                metrics.incrementar("crc_errors")
             
-                
       except Exception as e:
         print(f"Error en el servidor: {e}")
         server.close()
         
-def mainapp(data):
+def mainapp(data,metrics):
   
   sq, error = process_data(data)
+  if error is not None and isinstance(error,str) and error == "complete":
+    metrics.guardar("receptor")
+    print("Datos completos recibidos, guardando métricas.")
+    exit(0)
+
   
   if sq is None and not error:
   # send ACK with no sequence number (for handshake)
@@ -87,8 +102,7 @@ def mainapp(data):
       'seq': sq
     }, True
   else:
-    print("No se pudo procesar el paquete correctamente.")
-    return None, True
+    return None, error
     
   
 
@@ -96,16 +110,19 @@ def process_data(data):
   """
   Process the received data.
   """
-  parsed,error = parse_pkt(data, EXPERCTED_RECEIVER) 
+  global key 
+
+  parsed,error = parse_pkt(data, EXPERCTED_RECEIVER,key)  # type: ignore
   if error:
-    print(f"Error al procesar el paquete: {error}")
-    return None, True
+    return None, error
   
   # Check if it's a handshake packet
   if parsed.get('tipo') == 'h':
     print("Handshake recibido")
     global length_data
+
     length_data = parsed.get('data', 0) # 'data' en handshake es la longitud total
+    key = parsed.get('key', 0)  # 'key' en handshake es la clave de cifrado
     return None, False
   
   sequence = parsed['sq']
@@ -134,15 +151,15 @@ def process_data(data):
     # Por simplicidad y para demostrar el cifrado/descifrado, añadimos el string tal cual.
     if len(datos) < length_data: # Asegurarse de no exceder la longitud total esperada
         datos.append(data_content_str)
-        # Puedes añadir una lógica para manejar la reconstrucción de la lista original de palabras si es necesario.
-        # Por ejemplo, si cada 'data' de un paquete 'p' siempre es una única palabra:
-        # datos.append(data_content_str)
-        # Si 'data' es un conjunto de palabras concatenadas, necesitarías una forma de dividirlas
-        # o adaptar la lógica de Emisor para enviar palabras una por una o con un separador claro.
-    
+        # Verificar si ya se recibieron todos los datos después de agregar el nuevo elemento
+        if len(datos) >= length_data:
+            print("Todos los datos recibidos.")
+            # Aquí podrías guardar los datos en un archivo o procesarlos como necesites
+            return None, "complete"
   return parsed['sq'], False
 
 if __name__ == "__main__":
   ## incio del servidor
+  metrics = Metricas()
   server = SocketServer()
-  server.init()
+  server.init(metrics)

@@ -15,6 +15,9 @@ PORT = 5000           # Puerto arbitrario
 EMMITER = b'\x01'  # Emisor
 EXPERCTED_RECEIVER = b'\x02'  # Receptor esperado
 
+key = int(0x5A)
+
+
 
 
 
@@ -42,7 +45,7 @@ class ClienteSocket:
     def cerrar(self):
         self.socket.close()
 
-def main(socket_cliente,datos):
+def main(socket_cliente,datos,metrics):
     handshake = False
     while True:
         i = 0    
@@ -53,14 +56,16 @@ def main(socket_cliente,datos):
                     
                     if i + largo > len(datos):
                         largo = len(datos) - i
-                    mensaje = create_data_pkt(i,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
+                    mensaje = create_data_pkt(i,key,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
+                    metrics.incrementar("sent")
                     socket_cliente.enviar(mensaje)
                     respuesta = socket_cliente.recibir()
                     if respuesta:
-                        rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
+                        rsp,err = parse_pkt(respuesta,EMMITER,key=key)  # type: ignore
                         print()
                         if rsp is None:
                             print("Paquete recibido no válido o error en el procesamiento.")
+                            metrics.incrementar("incorrect")
                         elif rsp['tipo'] == 'a':
                             print(f"ACK recibido para secuencia {rsp['sq']}.")
                             if rsp['sq'] != i:
@@ -68,31 +73,40 @@ def main(socket_cliente,datos):
                                 continue
                             #print(f"Datos enviados: {datos[i:i+largo]}")
                             i += largo
+                            metrics.incrementar("correct")
                         elif rsp['tipo'] == 'n':
                             print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
+                            metrics.incrementar("incorrect")
                             continue
                         
                     else:
-                        print("No se recibió respuesta del servidor.")
+                        print("No se recibió respuesta del servidor,reenviando...")
+                        metrics.incrementar("loss")
                         # Intentar nuevamente o manejar el caso de no respuesta
                 else:
                     ## enviar handshake
-                    mensaje = create_handshake_pkt(int(len(datos)), EMMITER, EXPERCTED_RECEIVER)
+                   
+                    mensaje = create_handshake_pkt(int(len(datos)),key, EMMITER, EXPERCTED_RECEIVER)
+                    metrics.incrementar("sent")
                     socket_cliente.enviar(mensaje)
                     respuesta = socket_cliente.recibir()
                     if respuesta:
-                        rsp,err = parse_pkt(respuesta, EMMITER)  # type: ignore
+                        rsp,err = parse_pkt(respuesta, EMMITER,key)  # type: ignore
                         print()
                         if rsp is None:
                             print("Paquete recibido no válido o error en el procesamiento.")
+                            metrics.incrementar("incorrect")
                         elif rsp['tipo'] == 'a':
                             print(f"ACK recibido para Handshake.")
+                            metrics.incrementar("correct")
                             handshake = True
                         elif rsp['tipo'] == 'n':
                             print(f"NACK recibido para Handshake. Reintentando...")
+                            metrics.incrementar("incorrect")
                             continue
             except Exception as e:
                 print(f"Error: {e}")
+        metrics.guardar("emisor")
         exit(0)
 
     
@@ -107,8 +121,9 @@ if __name__ == "__main__":
     print(f"Datos cargados: {len(datos)}.")
     socket_cliente = ClienteSocket(HOST, PORT)
     socket_cliente.conectar()
-    # sleep 1 minuto
+    metrics = Metricas()
+        # sleep 1 minuto
     print("Esperando 20 segundos antes de enviar los datos...")
     time.sleep(20)  # Espera 1 minuto antes de enviar los datos
     print("Iniciando envío de datos...")
-    main(socket_cliente, datos)
+    main(socket_cliente, datos,metrics)

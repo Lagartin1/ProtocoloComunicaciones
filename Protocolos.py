@@ -1,10 +1,12 @@
 import random
+import json
+from datetime import datetime
 
 HEADER = b'\x01'  # header byte
 FOOTER = b'\x02'  # footer byte
 
 
-def parse_pkt(pkt, EXPERCTED_RECEIVER):
+def parse_pkt(pkt, EXPERCTED_RECEIVER,key:int):
     """
     Parse a packet and return its components.
     """
@@ -29,16 +31,17 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
         # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
         #print(f"Receptor: Datos cifrados recibidos (raw): {data_encrypted}")
         # Descifrar los datos aquí
-        data = descifrar(data_encrypted) # Llamada a descifrar
+        data = descifrar(data_encrypted,key) # Llamada a descifrar
         #print(f"Receptor: Datos descifrados (bytes): {data}")
         # --- FIN VERIFICACIÓN ---
 
     elif tipo == 'h':
         # Handshake packet: header + emisor + receptor + tipo + secuencia(2) + data(2) + largo(1) + crc(2) + footer
         data_value = int.from_bytes(pkt[6:8], byteorder='big')
-        largo = int.from_bytes(pkt[8:9], byteorder='big')
-        crc_received = int.from_bytes(pkt[9:11], byteorder='big')
-        crc_calculated = crc16_ibm(pkt[1:9])  # Exclude header and footer
+        key = pkt[8]  # Key for encryption (1 byte)
+        largo = pkt[9]  # Largo de los datos (1 byte)
+        crc_received = int.from_bytes(pkt[10:12], byteorder='big')
+        crc_calculated = crc16_ibm(pkt[1:10])  # Exclude header and footer
         data = data_value
     else:
         # ACK/NACK packet: header + emisor + receptor + tipo + secuencia(2) + largo(1) + crc(2) + footer
@@ -67,6 +70,7 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER):
         #print(f"Receptor: Datos descifrados y decodificados: {result['data']}") # Imprimir la versión final decodificada
     elif tipo == 'h':
         result['data'] = data
+        result['key'] = key
     
     return result, None
 
@@ -84,7 +88,7 @@ def crc16_ibm(data: bytes) -> int:
     return crc & 0xFFFF
 
 
-def cifrador(data, key: int = 0x5A):
+def cifrador(data, key: int):
     ## Cifra un dato con XOR
    
     data_bytes = bytearray(data)
@@ -92,19 +96,19 @@ def cifrador(data, key: int = 0x5A):
     return xor_cipher(data_bytes, key)
 
 
-def descifrar(data, key: int = 0x5A):
+def descifrar(data, key: int):
     ## Descifra un dato cifrado con XOR
     data_bytes = bytearray(data)
     return xor_cipher(data_bytes, key)
     
 
 # This function takes a byte array and a key, and returns the XORed result.
-def xor_cipher(data: bytes, key: int = 0x5A) -> bytes:
+def xor_cipher(data: bytes, key:int) -> bytes:
     return bytes(b ^ key for b in data)
 
 
 
-def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
+def create_data_pkt(sq: int, key:int,data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
     Create a data packet with the given sequence number and data.
     """
@@ -114,7 +118,7 @@ def create_data_pkt(sq: int, data: list[str],EMMITER: bytes, EXPERCTED_RECEIVER:
     # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
     #print(f"Emisor: Datos originales (bytes): {data_bytes}")
     # Cifrar los datos aquí
-    data_encrypted = cifrador(data_bytes) # Llamada a cifrador
+    data_encrypted = cifrador(data_bytes,key) # Llamada a cifrador
     #print(f"Emisor: Datos cifrados (bytes): {data_encrypted}")
     ## --- FIN VERIFICACIÓN ---
 
@@ -189,7 +193,7 @@ def create_nack(sq: int, EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     return bytes(pkt)
 
 
-def create_handshake_pkt(data:int,EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
+def create_handshake_pkt(data:int,key:int,EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> bytes:
     """
     Create a handshake packet.
     """
@@ -201,6 +205,7 @@ def create_handshake_pkt(data:int,EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> 
     pkt.append(ord('h'))  # Tipo Handshake (using 'h' as representation)
     pkt.extend((0).to_bytes(2, byteorder='big'))  # Secuencia (0 for handshake)
     pkt.extend((data).to_bytes(2, byteorder='big'))  # Data (length of the data)
+    pkt.extend((key).to_bytes(1, byteorder='big'))  # Key for encryption (1 byte)
     pkt.extend((1).to_bytes(1, byteorder='big'))  # Largo de los datos (1 for handshake)
 
     # Calculate CRC and append it to the packet
@@ -209,3 +214,31 @@ def create_handshake_pkt(data:int,EMMITER: bytes, EXPERCTED_RECEIVER: bytes) -> 
     pkt.append(FOOTER[0])  # Footer
     
     return bytes(pkt)
+
+
+
+class Metricas:
+    def __init__(self):
+        self.stats = {
+            "crc_errors": 0,
+            "duplicates": 0,
+            "losses": 0,
+            "sent": 0,
+            "correct": 0,
+            "incorrect":0
+        }
+
+    def incrementar(self, clave):
+        if clave in self.stats:
+            self.stats[clave] += 1
+
+    def guardar(self,container):
+        newRoute= f"/app/metrics/{container}_metrics.json"
+        self.stats["timestamp"] = datetime.now().isoformat()
+        with open(newRoute, "w") as f:
+            json.dump(self.stats, f, indent=4)
+
+    def mostrar(self):
+        for k, v in self.stats.items():
+            print(f"{k}: {v}")
+
