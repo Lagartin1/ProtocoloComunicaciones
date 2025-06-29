@@ -27,9 +27,10 @@ c. En la tercera terminal, ejecutar el contenedor que simula errores en la comun
    después ver en la terminal del emisor el mensaje `Esperando 20 segundos antes de enviar los datos...`, en ese momento ejecuta el siguiente comando:
 
 ```sh
-   docker compose up -d chaos_delay && docker compose up -d chaos_loss $$ docker compose up -d chaos_corruption
+   docker compose up -d chaos
 ```
-   >> Nota: Si se desea simular solo el delay, solo ejecutar el comando `docker compose up -d chaos_delay`, si se desea simular solo la pérdida de paquetes, ejecutar `docker compose up -d chaos_loss`, y si se desea simular solo la corrupción de datos, ejecutar `docker compose up -d chaos_corruption`.
+
+>> Nota: Si se desea simular solo el delay, solo ejecutar el comando `docker compose up -d chaos_delay`, si se desea simular solo la pérdida de paquetes, ejecutar `docker compose up -d chaos_loss`, y si se desea simular solo la corrupción de datos, ejecutar `docker compose up -d chaos_corruption`.
 
 1. Para detener los contenedores, ejecutar el siguiente comando en cada terminal:
 
