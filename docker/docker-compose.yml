@@ -30,10 +30,29 @@ services:
       - ./metrics:/app/metrics
     networks:
       - mi_red_interna
+  chaos:
+    image: gaiaadm/pumba:latest
+    container_name: chaos
+    command: ["netem", "--duration", "60m", 
+              "delay", "-t", "5000", "-j", "500", "-c", "20",
+              "loss","-p" ,"50","-c","30",
+              "corrupt","-p","20","-c","10",
+              "duplicate", "-p", "25",  "emisor"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - receptor
+    networks:
+      - mi_red_interna
+
   chaos_delay:
     image: gaiaadm/pumba:latest
     container_name: chaos_delay
-    command: ["netem", "--duration", "60m", "delay", "--time", "5000", "--jitter", "1000", "--correlation", "20", "emisor"]
+    command: ["netem", "--duration", "60m", 
+              "delay", "-t", "5000", "-j", "500", "-c", "20",
+              "emisor"]
     cap_add:
       - NET_ADMIN
     volumes:
@@ -68,6 +87,20 @@ services:
       - receptor
     networks:
       - mi_red_interna
+      
+  chaos_duplicate:
+    image: gaiaadm/pumba:latest
+    container_name: chaos_duplicate
+    command: ["netem", "--duration", "60m", "duplicate", "--percent", "50", "receptor"]
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - receptor
+    networks:
+      - mi_red_interna
+
 
 networks:
   mi_red_interna:

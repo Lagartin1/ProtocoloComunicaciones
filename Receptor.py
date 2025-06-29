@@ -48,20 +48,23 @@ class SocketServer:
             response_pkt, error = mainapp(data,metrics)
             if response_pkt is not None:
               if error:
-                print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
-                print(f"Error: {error}")
-                # Asegurarse de enviar el NACK con el número de secuencia correcto.
-                metrics.incrementar("incorrect")
-                metrics.incrementar("sent")
-                conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
+                  print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
+                  print(f"Error: {error}")
+                  metrics.incrementar("incorrect")
+                  metrics.incrementar("sent")
+                  conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER))  # type: ignore
               else:
-                print(f"Paquete procesado correctamente seq={response_pkt['seq']}, se envió ACK.")
-                # Asegurarse de enviar el ACK con el número de secuencia correcto.
-                if error is not None:
-                  metrics.incrementar("duplicates")
-                metrics.incrementar("sent")
-                metrics.incrementar("correct")
-                conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER)) # type: ignore
+                  if hasattr(metrics, "ultimo_seq") and metrics.ultimo_seq == response_pkt['seq']:
+                      metrics.incrementar("duplicates")
+                      print(f"Paquete duplicado seq={response_pkt['seq']}, se reenvió ACK.")
+                  else:
+                      print(f"Paquete procesado correctamente seq={response_pkt['seq']}, se envió ACK.")
+
+                  metrics.ultimo_seq = response_pkt['seq']
+                  metrics.incrementar("sent")
+                  metrics.incrementar("correct")
+                  conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER))  # type: ignore
+
             elif error:
               print(f"Error {error} en paquete recibido")
               if isinstance(error, str) and error == "CRC mismatch":
