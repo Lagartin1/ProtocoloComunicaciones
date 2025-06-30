@@ -21,58 +21,50 @@ class SocketServer:
     def __init__(self, host=HOST, port=PORT):
       self.host = host
       self.port = port
-      self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
       self.sock.bind((self.host, self.port))
-      self.sock.listen()
-      print(f"Servidor escuchando en {self.host}:{self.port}")
 
-    def accept_connection(self):
-      conn, addr = self.sock.accept()
-      print(f"Conexión aceptada de {addr}")
-      return conn, addr
+      print(f"Servidor escuchando en {self.host}:{self.port}")
 
     def close(self):
       self.sock.close()
 
     def init(self,metrics):
       print("Inicializando el servidor...")
-      self.sock.listen()
+      seen = set()  # Para evitar duplicados
       try:
-        conn, _ = server.accept_connection()
-        with conn:
           while True:
-            data = conn.recv(1024)
-            if not data:
-              metrics.incrementar("losses")
-              continue
-            response_pkt, error = mainapp(data,metrics)
-            if response_pkt is not None:
-              if error:
-                  print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
-                  print(f"Error: {error}")
-                  metrics.incrementar("incorrect")
-                  metrics.incrementar("sent")
-                  conn.sendall(create_nack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER))  # type: ignore
-              else:
-                  if hasattr(metrics, "ultimo_seq") and metrics.ultimo_seq == response_pkt['seq']:
-                      metrics.incrementar("duplicates")
-                      print(f"Paquete duplicado seq={response_pkt['seq']}, se reenvió ACK.")
+              data, addr = self.sock.recvfrom(4096)
+              if not data:
+                  metrics.incrementar("losses")
+                  continue
+              response_pkt, error = mainapp(data, metrics)
+              if response_pkt is not None:
+                  if error:
+                      print(f"Error al procesar el paquete sq={response_pkt['seq']}, se envió NACK.")
+                      print(f"Error: {error}")
+                      metrics.incrementar("incorrect")
+                      metrics.incrementar("sent")
+                      self.sock.sendto(create_nack(response_pkt['seq'], EXPERCTED_RECEIVER, EMMITER), addr)  # type: ignore
                   else:
-                      print(f"Paquete procesado correctamente seq={response_pkt['seq']}, se envió ACK.")
+                      if response_pkt['seq'] in seen:
+                          metrics.incrementar("duplicates")
+                          print(f"Paquete duplicado recibido, seq={response_pkt['seq']}, enviando ACK.")
+                      else:
+                        seen.add(response_pkt['seq'])
+                        print(f"Paquete recibido, seq={response_pkt['seq']}, enviando ACK.")
+                      metrics.ultimo_seq = response_pkt['seq']
+                      metrics.incrementar("sent")
+                      metrics.incrementar("correct")
+                      self.sock.sendto(create_ack(response_pkt['seq'], EXPERCTED_RECEIVER, EMMITER), addr)  # type: ignore
 
-                  metrics.ultimo_seq = response_pkt['seq']
-                  metrics.incrementar("sent")
-                  metrics.incrementar("correct")
-                  conn.sendall(create_ack(response_pkt['seq'],EXPERCTED_RECEIVER,EMMITER))  # type: ignore
-
-            elif error:
-              print(f"Error {error} en paquete recibido")
-              if isinstance(error, str) and error == "CRC mismatch":
-                metrics.incrementar("crc_errors")
-            
+              elif error:
+                  print(f"Error {error} en paquete recibido")
+                  if isinstance(error, str) and error == "CRC mismatch":
+                      metrics.incrementar("crc_errors")
       except Exception as e:
-        print(f"Error en el servidor: {e}")
-        server.close()
+          print(f"Error en el servidor: {e}")
+          self.close()
         
 def mainapp(data,metrics):
   

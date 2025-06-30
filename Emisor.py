@@ -1,19 +1,15 @@
 from Protocolos import *
 import socket
-
-""" 
-    opciones para canal:
-    -web socket
-    -archivos compartidos
-    -pipeline
-    -sockets con docker y pumba para jitter,perdida de paquetes y latencia
-"""
 import os
 import time
+
+
 HOST = os.environ.get("RECEIVER_HOST", "127.0.0.1")  # Ahora usa variable de entorno
 PORT = 5000           # Puerto arbitrario
 EMMITER = b'\x01'  # Emisor
 EXPERCTED_RECEIVER = b'\x02'  # Receptor esperado
+MAX_RETRIES = 3      # cuántos reintentos antes de dar por perdido
+TIMEOUT = 2.0        # segundos a esperar por ACK
 
 key = int(0x5A)
 
@@ -25,14 +21,11 @@ class ClienteSocket:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.settimeout(5)  # Establecer un tiempo de espera de 5 segundos para las operaciones de socket
-
-    def conectar(self):
-        self.socket.connect((self.host, self.port))
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.settimeout(TIMEOUT)  # Establecer tiempo de espera para recibir datos
 
     def enviar(self, mensaje):
-        self.socket.sendall(mensaje)
+        self.socket.sendto(mensaje, (self.host, self.port))
 
     def recibir(self):
         try:
@@ -57,53 +50,57 @@ def main(socket_cliente,datos,metrics):
                     if i + largo > len(datos):
                         largo = len(datos) - i
                     mensaje = create_data_pkt(i,key,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
-                    metrics.incrementar("sent")
-                    socket_cliente.enviar(mensaje)
-                    respuesta = socket_cliente.recibir()
-                    if respuesta:
-                        rsp,err = parse_pkt(respuesta,EMMITER,key=key)  # type: ignore
-                        print()
-                        if rsp is None:
-                            print("Paquete recibido no válido o error en el procesamiento.")
-                            metrics.incrementar("incorrect")
-                        elif rsp['tipo'] == 'a':
-                            print(f"ACK recibido para secuencia {rsp['sq']}.")
-                            if rsp['sq'] != i:
-                                print(f"Secuencia esperada {i}, pero se recibió {rsp['sq']}. Reintentando...")
+                    ack_ok = False
+                    for intento in range(MAX_RETRIES):
+                        socket_cliente.enviar(mensaje)
+                        metrics.incrementar("sent")
+                        respuesta = socket_cliente.recibir()
+                        if respuesta:
+                            rsp, err = parse_pkt(respuesta, EMMITER, key)
+                            if rsp and rsp['tipo'] == 'a' and rsp['sq'] == i:
+                                print(f"ACK recibido seq={i}.")
+                                metrics.incrementar("correct")
+                                i += largo
+                                ack_ok = True
+                                break
+                            elif rsp and rsp['tipo'] == 'n':
+                                print(f"NACK recibido seq={i}. Reintentando...")
+                                metrics.incrementar("incorrect")
                                 continue
-                            #print(f"Datos enviados: {datos[i:i+largo]}")
-                            i += largo
-                            metrics.incrementar("correct")
-                        elif rsp['tipo'] == 'n':
-                            print(f"NACK recibido para secuencia {rsp['sq']}. Reintentando...")
-                            metrics.incrementar("incorrect")
-                            continue
-                        
-                    else:
-                        print("No se recibió respuesta del servidor,reenviando...")
-                        metrics.incrementar("loss")
+                        print(f"[WARN] Timeout seq={i}, intento {intento+1}/{MAX_RETRIES}")
+                        metrics.incrementar("timeouts")
+                    if not ack_ok:
+                        print(f"[ERROR] No llegó ACK seq={i} tras {MAX_RETRIES} intentos.")
+                        metrics.incrementar("lost_app")
+                        i += largo  # o decide si vuelves a intentar más adelante
                         # Intentar nuevamente o manejar el caso de no respuesta
                 else:
                     ## enviar handshake
-                   
-                    mensaje = create_handshake_pkt(int(len(datos)),key, EMMITER, EXPERCTED_RECEIVER)
-                    metrics.incrementar("sent")
-                    socket_cliente.enviar(mensaje)
-                    respuesta = socket_cliente.recibir()
-                    if respuesta:
-                        rsp,err = parse_pkt(respuesta, EMMITER,key)  # type: ignore
-                        print()
-                        if rsp is None:
-                            print("Paquete recibido no válido o error en el procesamiento.")
-                            metrics.incrementar("incorrect")
-                        elif rsp['tipo'] == 'a':
-                            print(f"ACK recibido para Handshake.")
-                            metrics.incrementar("correct")
-                            handshake = True
-                        elif rsp['tipo'] == 'n':
-                            print(f"NACK recibido para Handshake. Reintentando...")
-                            metrics.incrementar("incorrect")
-                            continue
+                    mensaje = create_handshake_pkt(int(len(datos)),key, EMMITER, EXPERCTED_RECEIVER)  # type: ignore
+                    ack_ok = False
+                    for intento in range(MAX_RETRIES):
+                        socket_cliente.enviar(mensaje)
+                        metrics.incrementar("sent")
+                        respuesta = socket_cliente.recibir()
+                        if respuesta:
+                            rsp, err = parse_pkt(respuesta, EMMITER, key)
+                            if rsp and rsp['tipo'] == 'a':
+                               print("ACK recibido para Handshake.")
+                               metrics.incrementar("correct")
+                               ack_ok = True
+                               handshake = True
+                               break
+                            elif rsp and rsp['tipo'] == 'n':
+                               print("NACK recibido para Handshake. Reintentando...")
+                               metrics.incrementar("incorrect")
+                               continue
+                        print(f"[WARN] Timeout handshake, intento {intento+1}/{MAX_RETRIES}")
+                        metrics.incrementar("timeouts")
+                    if not ack_ok:
+                      print(f"[ERROR] Handshake falló tras {MAX_RETRIES} intentos.")
+                      metrics.incrementar("lost_app")
+                      return  # o break, según quieras abortar
+                    
             except Exception as e:
                 print(f"Error: {e}")
         metrics.guardar("emisor")
@@ -120,7 +117,6 @@ if __name__ == "__main__":
 
     print(f"Datos cargados: {len(datos)}.")
     socket_cliente = ClienteSocket(HOST, PORT)
-    socket_cliente.conectar()
     metrics = Metricas()
         # sleep 1 minuto
     print("Esperando 20 segundos antes de enviar los datos...")

@@ -9,7 +9,7 @@ services:
     volumes:
       - ./metrics:/app/metrics
     ports:
-      - "5000:5000"
+      - "5000:5000/udp"
     networks:
       - mi_red_interna
 
@@ -91,7 +91,7 @@ services:
   chaos_duplicate:
     image: gaiaadm/pumba:latest
     container_name: chaos_duplicate
-    command: ["netem", "--duration", "60m", "duplicate", "--percent", "50", "receptor"]
+    command: ["--log-level", "debug","netem", "--duration", "60m", "duplicate", "-p", "25","-c","20", "emisor"]
     cap_add:
       - NET_ADMIN
     volumes:
