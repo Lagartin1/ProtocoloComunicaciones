@@ -13,7 +13,7 @@ TIMEOUT = 5.0        # segundos a esperar por ACK
 key = int(0x5A)
 
 
-
+False
 
 
 class ClienteSocket:
@@ -50,9 +50,7 @@ def main(socket_cliente,datos,metrics):
                     if i + largo > len(datos):
                         largo = len(datos) - i
                         last = True
-                        mensaje = create_data_pkt(i,key,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
-                    else:
-                        mensaje = create_data_pkt(i,key,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
+                    mensaje = create_data_pkt(i,key,datos[i:i+largo],EMMITER, EXPERCTED_RECEIVER) # type: ignore
                     print(f"Enviando datos con secuencia {i}.")
                     socket_cliente.enviar(mensaje)
                     metrics.incrementar("sent")

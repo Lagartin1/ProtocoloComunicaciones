@@ -14,6 +14,7 @@ services:
       - mi_red_interna
 
 
+
   emisor:
     build:
       context: ..
@@ -26,6 +27,8 @@ services:
       - RECEIVER_HOST=receptor
       - RECEIVER_PORT=5000
       - PYTHONUNBUFFERED=1
+      - ERROR=True
+      - E_PERCENT=0.1
     volumes:
       - ./metrics:/app/metrics
     networks:
