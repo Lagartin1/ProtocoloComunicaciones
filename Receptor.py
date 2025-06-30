@@ -31,6 +31,7 @@ class SocketServer:
 
     def init(self,metrics):
       print("Inicializando el servidor...")
+      salir = False
       seen = set()  # Para evitar duplicados
       try:
           while True:
@@ -53,10 +54,17 @@ class SocketServer:
                       else:
                         seen.add(response_pkt['seq'])
                         print(f"Paquete recibido, seq={response_pkt['seq']}, enviando ACK.")
+                        if None not in datos:
+                          print("Todos los datos recibidos, enviando ACK y Saliendo....")
+                          salir = True
                       metrics.ultimo_seq = response_pkt['seq']
                       metrics.incrementar("sent")
                       metrics.incrementar("correct")
                       self.sock.sendto(create_ack(response_pkt['seq'], EXPERCTED_RECEIVER, EMMITER), addr)  # type: ignore
+                      if salir:
+                          metrics.guardar("receptor")
+                
+                          exit(0)
 
               elif error:
                   print(f"Error {error} en paquete recibido")
@@ -115,8 +123,10 @@ def process_data(data):
   if parsed.get('tipo') == 'h':
     print("Handshake recibido")
     global length_data
-
     length_data = parsed.get('data', 0) # 'data' en handshake es la longitud total
+    global datos
+    for i in range(length_data):
+      datos.append(None)
     key = parsed.get('key', 0)  # 'key' en handshake es la clave de cifrado
     return None, False
   
@@ -124,9 +134,10 @@ def process_data(data):
   if sequence in index:
     print(f"Secuencia {parsed['sq']} ya procesada, enviando Ack.")
     return parsed['sq'], False
-  index.append(sequence)
+
   
-  data_content_str = parsed.get('data', '') # Los datos ya vienen descifrados y decodificados como string
+  data_content = parsed.get('data') # Los datos ya vienen descifrados y decodificados como string
+  largo = parsed.get('largo', 0)  # Largo del paquete de datos
   
   # Dividir el string en palabras (si el emisor envía palabras individuales)
   # Esto asume que el emisor unió las palabras con `b''.join(item.encode('utf-8') for item in data)`
@@ -135,22 +146,17 @@ def process_data(data):
   # La forma más segura de reconstruir sería enviar la longitud original de las palabras,
   # o re-dividir el string recibido si se sabe el separador original (ej. ' ').
   # Para este ejemplo, asumiremos que los datos se reciben como un solo string y se añaden directamente.
-  
-  if isinstance(data_content_str, str):
-    # Opcional: si sabes que los datos originales eran palabras separadas, puedes intentar dividirlos de nuevo.
-    # Por ejemplo, si siempre se usó un espacio como separador:
-    # palabras_recibidas = data_content_str.split(' ') 
-    
-    # Para este ejemplo, simplemente añadiremos el string completo a la lista de datos del receptor.
-    # Si la intención es reconstruir la lista de palabras original, esto sería más complejo.
-    # Por simplicidad y para demostrar el cifrado/descifrado, añadimos el string tal cual.
-    if len(datos) < length_data: # Asegurarse de no exceder la longitud total esperada
-        datos.append(data_content_str)
-        # Verificar si ya se recibieron todos los datos después de agregar el nuevo elemento
-        if len(datos) >= length_data:
-            print("Todos los datos recibidos.")
-            # Aquí podrías guardar los datos en un archivo o procesarlos como necesites
-            return None, "complete"
+  #:
+    # Permitir agregar paquetes perdidos en la posición correcta
+  if sequence not in index:
+      index.append(sequence)
+      if len(datos) <= length_data:
+          for i in range(0,len(data_content)):
+              if sequence + i < length_data:
+                datos[sequence + i] = data_content[i]
+              
+  ## imprimir posiciones con No
+          
   return parsed['sq'], False
 
 if __name__ == "__main__":

@@ -66,7 +66,9 @@ def parse_pkt(pkt, EXPERCTED_RECEIVER,key:int):
     
     if tipo == 'p':
         result['largo'] = largo
-        result['data'] = data.decode('utf-8') # Decodificar los datos descifrados a string
+        # decodificar los datos descifrados de bytes a arreglo separapo por caracter nulo
+        #print(data.decode('utf-8').split('\x00') )
+        result['data'] = data.decode('utf-8').split('\x00')  # Decodificar los datos descifrados a string
         #print(f"Receptor: Datos descifrados y decodificados: {result['data']}") # Imprimir la versión final decodificada
     elif tipo == 'h':
         result['data'] = data
@@ -113,8 +115,14 @@ def create_data_pkt(sq: int, key:int,data: list[str],EMMITER: bytes, EXPERCTED_R
     Create a data packet with the given sequence number and data.
     """
     # Convert the data to bytes
-    data_bytes = b''.join(item.encode('utf-8') for item in data)
+    # juntar el array en un solo string con un caract nulo distinto al caracter nulo usado en el cifrado
+    data_str = '\x00'.join(data)  # Join the list into a single string with null character as separator
     
+    
+    # Convert the string to bytes, using UTF-8 encoding
+    data_bytes = data_str.encode('utf-8')
+    
+    #print(f"Emisor: Datos originales (bytes): {data_bytes}")
     # --- VERIFICACIÓN DE CIFRADO/DESCIFRADO ---
     #print(f"Emisor: Datos originales (bytes): {data_bytes}")
     # Cifrar los datos aquí
