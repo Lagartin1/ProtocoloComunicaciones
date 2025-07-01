@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 import os
 ERROR = str(os.environ.get("ERROR", "0"))
-E_PERCENT = float(os.environ.get("E_PERCENT", 0))
+E_PERCENT = float(os.environ.get("E_ERROR", 0.01))  # Default to 0.01 if not set
 
 HEADER = b'\x01'  # header byte
 FOOTER = b'\x02'  # footer byte
@@ -157,7 +157,9 @@ def create_data_pkt(sq: int, key:int,data: list[str],EMMITER: bytes, EXPERCTED_R
     # en base a una probabilidad, se añade un error en el byte 10
     #if random.random() < 0.2:  # 10% chance to introduce an error
     #    pkt[10] = (pkt[10] + 1) % 256    
-    if ERROR.lower() == "true" and random.random() < E_PERCENT:  # Introduce error based on environment variable
+    random_n = random.random()  # Generate a random float between 0 and 1
+    #print(f"{random_n}, {E_PERCENT}")
+    if ERROR.lower() == "true" and random_n < E_PERCENT:  # Introduce error based on environment variable
         # Introduce an error in the packet (e.g., flip a random bit)
         pkt[10] = (pkt[10] + 1) % 256 
     return bytes(pkt)

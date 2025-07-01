@@ -63,7 +63,7 @@ class SocketServer:
                       self.sock.sendto(create_ack(response_pkt['seq'], EXPERCTED_RECEIVER, EMMITER), addr)  # type: ignore
                       if salir:
                           metrics.guardar("receptor")
-                
+
                           exit(0)
 
               elif error:
