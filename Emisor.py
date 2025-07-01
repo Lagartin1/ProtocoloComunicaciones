@@ -62,6 +62,7 @@ def main(socket_cliente,datos,metrics):
                             print(f"ACK recibido seq={i + largo}.")
                             metrics.incrementar("correct")
                             i += largo
+                            metrics.guardar("emisor")
                             return
                         elif last and rsp and rsp['tipo'] == 'a' and rsp['sq'] != i :
                             print(f"ACK recibido con secuencia {rsp['sq']} en lugar de {i}, Reintentando...")
@@ -80,7 +81,7 @@ def main(socket_cliente,datos,metrics):
                         
                     else:
                         print(f"[WARN] Timeout seq={i}. Reintentando...")
-                        metrics.incrementar("timeouts")
+                        metrics.incrementar("losses")
                         
                 else:
                     ## enviar handshake
